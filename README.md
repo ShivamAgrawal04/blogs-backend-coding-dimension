@@ -1,0 +1,33 @@
+# Backend — Coding Dimension API
+
+Standalone NestJS API. Run everything from **this folder**.
+
+## Quick start
+
+```bash
+docker compose up -d
+pnpm install
+cp .env.example .env
+pnpm prisma:generate
+pnpm prisma db push
+pnpm prisma:seed
+pnpm dev
+```
+
+- API: http://localhost:3001  
+- Swagger: http://localhost:3001/api/docs  
+- Seed admin: `admin@codingdimension.com` / `admin123`
+
+## Docs
+
+| Doc | Content |
+|-----|---------|
+| [Project features](../docs/02-features.md) | What’s implemented |
+| [Flows](../docs/03-flows.md) | End-to-end flows |
+| [docs/api.md](docs/api.md) | Endpoint list |
+| [docs/schema.md](docs/schema.md) | Database models |
+| [docs/security.md](docs/security.md) | Auth & hardening |
+
+## Modules (under `src/modules/`)
+
+`auth` · `blogs` · `notes` · `comments` · `likes` · `bookmarks` · `search` · `admin` · `users` · `newsletter` · `analytics` · `health`
