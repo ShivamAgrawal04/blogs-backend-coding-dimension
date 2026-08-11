@@ -9,10 +9,10 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
-import { LikesService } from './likes.service';
-import { ToggleLikeDto } from './dto/toggle-like.dto';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { LikesService } from '@/modules/likes/likes.service';
+import { ToggleLikeDto } from '@/modules/likes/dto/toggle-like.dto';
+import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
+import { CurrentUser } from '@/modules/auth/decorators/current-user.decorator';
 
 @ApiTags('Likes')
 @Controller('likes')
@@ -29,10 +29,11 @@ export class LikesController {
   }
 
   @Get('count')
-  @ApiOperation({ summary: 'Get like count for a blog, note, or comment' })
+  @ApiOperation({ summary: 'Get like or dislike count for a blog, note, or comment' })
   @ApiQuery({ name: 'blogId', required: false })
   @ApiQuery({ name: 'noteId', required: false })
   @ApiQuery({ name: 'commentId', required: false })
+  @ApiQuery({ name: 'type', required: false, enum: ['LIKE', 'DISLIKE'] })
   async getCount(
     @Query('blogId') blogId?: string,
     @Query('noteId') noteId?: string,

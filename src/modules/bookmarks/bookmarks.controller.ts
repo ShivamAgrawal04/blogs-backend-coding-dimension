@@ -8,10 +8,10 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
-import { BookmarksService } from './bookmarks.service';
-import { ToggleBookmarkDto } from './dto/toggle-bookmark.dto';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { BookmarksService } from '@/modules/bookmarks/bookmarks.service';
+import { ToggleBookmarkDto } from '@/modules/bookmarks/dto/toggle-bookmark.dto';
+import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
+import { CurrentUser } from '@/modules/auth/decorators/current-user.decorator';
 
 @ApiTags('Bookmarks')
 @Controller('bookmarks')

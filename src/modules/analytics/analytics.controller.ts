@@ -10,11 +10,11 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
-import { AnalyticsService } from './analytics.service';
-import { TrackPageViewDto } from './dto/track-page-view.dto';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../auth/guards/roles.guard';
-import { Roles } from '../auth/decorators/roles.decorator';
+import { AnalyticsService } from '@/modules/analytics/analytics.service';
+import { TrackPageViewDto } from '@/modules/analytics/dto/track-page-view.dto';
+import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
+import { RolesGuard } from '@/modules/auth/guards/roles.guard';
+import { Roles } from '@/modules/auth/decorators/roles.decorator';
 import { Request } from 'express';
 
 @ApiTags('Analytics')

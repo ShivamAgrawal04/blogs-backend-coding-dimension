@@ -1,10 +1,14 @@
-import { Injectable } from '@nestjs/common';
-import { PrismaService } from '../../prisma/prisma.service';
+import { Inject, Injectable } from '@nestjs/common';
+import { count, desc, gte, isNotNull, sql } from 'drizzle-orm';
+import { createId } from '@paralleldrive/cuid2';
+import { DrizzleDB } from '@/db/drizzle.module';
+import { DRIZZLE } from '@/db/drizzle.token';
+import { pageViews } from '@/db/schema';
 import { Request } from 'express';
 
 @Injectable()
 export class AnalyticsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(@Inject(DRIZZLE) private db: DrizzleDB) {}
 
   async trackPageView(
     dto: { path: string; referer?: string; userId?: string },
@@ -18,15 +22,18 @@ export class AnalyticsService {
 
     const userAgent = request?.headers['user-agent'] || null;
 
-    return this.prisma.pageView.create({
-      data: {
+    const [pageView] = await this.db
+      .insert(pageViews)
+      .values({
+        id: createId(),
         path: dto.path,
-        referer: dto.referer,
-        userId: dto.userId,
+        referer: dto.referer ?? null,
+        userId: dto.userId ?? null,
         ip,
         userAgent,
-      },
-    });
+      })
+      .returning();
+    return pageView;
   }
 
   async getStats() {
@@ -43,48 +50,26 @@ export class AnalyticsService {
       uniqueVisitors,
       topPages,
     ] = await Promise.all([
-      this.prisma.pageView.count(),
-      this.prisma.pageView.count({
-        where: { createdAt: { gte: thirtyDaysAgo } },
-      }),
-      this.prisma.pageView.count({
-        where: { createdAt: { gte: sevenDaysAgo } },
-      }),
-      this.prisma.pageView.count({
-        where: { createdAt: { gte: twentyFourHoursAgo } },
-      }),
-      this.prisma.pageView.findMany({
-        where: { ip: { not: null } },
-        distinct: ['ip'],
-        select: { ip: true },
-      }),
-      this.prisma.pageView.groupBy({
-        by: ['path'],
-        _count: { id: true },
-        orderBy: { _count: { id: 'desc' } },
-        take: 10,
-      }),
+      this.db.select({ value: count() }).from(pageViews),
+      this.db.select({ value: count() }).from(pageViews).where(gte(pageViews.createdAt, thirtyDaysAgo)),
+      this.db.select({ value: count() }).from(pageViews).where(gte(pageViews.createdAt, sevenDaysAgo)),
+      this.db.select({ value: count() }).from(pageViews).where(gte(pageViews.createdAt, twentyFourHoursAgo)),
+      this.db.selectDistinct({ ip: pageViews.ip }).from(pageViews).where(isNotNull(pageViews.ip)),
+      this.db.select({ path: pageViews.path, views: count() }).from(pageViews)
+        .groupBy(pageViews.path).orderBy(desc(count())).limit(10),
     ]);
 
-    const dailyViews = await this.prisma.$queryRaw<
-      Array<{ date: string; views: number }>
-    >`
-      SELECT DATE(created_at) as date, COUNT(*)::int as views
-      FROM page_views
-      WHERE created_at >= ${thirtyDaysAgo}
-      GROUP BY DATE(created_at)
-      ORDER BY date ASC
-    `;
+    const dailyViews = await this.dailyViews(thirtyDaysAgo);
 
     return {
-      totalViews,
-      views30d,
-      views7d,
-      views24h,
+      totalViews: totalViews[0].value,
+      views30d: views30d[0].value,
+      views7d: views7d[0].value,
+      views24h: views24h[0].value,
       uniqueVisitors: uniqueVisitors.length,
       topPages: topPages.map((p) => ({
         path: p.path,
-        views: p._count.id,
+        views: p.views,
       })),
       dailyViews,
     };
@@ -97,36 +82,34 @@ export class AnalyticsService {
     );
 
     const [totalViews, topPages] = await Promise.all([
-      this.prisma.pageView.count({
-        where: { createdAt: { gte: startDate } },
-      }),
-      this.prisma.pageView.groupBy({
-        by: ['path'],
-        where: { createdAt: { gte: startDate } },
-        _count: { id: true },
-        orderBy: { _count: { id: 'desc' } },
-        take: 10,
-      }),
+      this.db.select({ value: count() }).from(pageViews).where(gte(pageViews.createdAt, startDate)),
+      this.db.select({ path: pageViews.path, views: count() }).from(pageViews)
+        .where(gte(pageViews.createdAt, startDate))
+        .groupBy(pageViews.path).orderBy(desc(count())).limit(10),
     ]);
 
-    const dailyViews = await this.prisma.$queryRaw<
-      Array<{ date: string; views: number }>
-    >`
-      SELECT DATE(created_at) as date, COUNT(*)::int as views
-      FROM page_views
-      WHERE created_at >= ${startDate}
-      GROUP BY DATE(created_at)
-      ORDER BY date ASC
-    `;
+    const dailyViews = await this.dailyViews(startDate);
 
     return {
-      totalViews,
+      totalViews: totalViews[0].value,
       topPages: topPages.map((p) => ({
         path: p.path,
-        views: p._count.id,
+        views: p.views,
       })),
       dailyViews,
       days: range,
     };
+  }
+
+  private dailyViews(startDate: Date) {
+    return this.db
+      .select({
+        date: sql<string>`date(${pageViews.createdAt})`,
+        views: sql<number>`count(*)::int`,
+      })
+      .from(pageViews)
+      .where(gte(pageViews.createdAt, startDate))
+      .groupBy(sql`date(${pageViews.createdAt})`)
+      .orderBy(sql`date(${pageViews.createdAt})`);
   }
 }

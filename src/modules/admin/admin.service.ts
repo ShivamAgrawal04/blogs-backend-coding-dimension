@@ -1,69 +1,78 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
-import { PrismaService } from '../../prisma/prisma.service';
-import { UserRole } from '@prisma/client';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { and, count, desc, eq, ilike, or, sql } from 'drizzle-orm';
+import { DrizzleDB } from '@/db/drizzle.module';
+import { DRIZZLE } from '@/db/drizzle.token';
+import { isSuperAdminEmail } from '@/common/roles';
+import {
+  blogs,
+  comments,
+  likes,
+  newsletterSubscribers,
+  notes,
+  pageViews,
+  users,
+} from '@/db/schema';
 
 @Injectable()
 export class AdminService {
-  constructor(private prisma: PrismaService) {}
+  constructor(@Inject(DRIZZLE) private db: DrizzleDB) {}
 
   async getStats() {
     const [
-      totalUsers,
-      totalBlogs,
-      totalNotes,
-      totalComments,
-      pageViews,
-      totalSubscribers,
+      [totalUsers],
+      [totalBlogs],
+      [totalNotes],
+      [totalComments],
+      [pageViewCount],
+      [totalSubscribers],
       recentUsers,
       recentBlogs,
     ] = await Promise.all([
-      this.prisma.user.count(),
-      this.prisma.blog.count(),
-      this.prisma.note.count(),
-      this.prisma.comment.count(),
-      this.prisma.pageView.count(),
-      this.prisma.newsletterSubscriber.count(),
-      this.prisma.user.findMany({
-        take: 5,
-        orderBy: { createdAt: 'desc' },
-        select: {
+      this.db.select({ value: count() }).from(users),
+      this.db.select({ value: count() }).from(blogs),
+      this.db.select({ value: count() }).from(notes),
+      this.db.select({ value: count() }).from(comments),
+      this.db.select({ value: count() }).from(pageViews),
+      this.db.select({ value: count() }).from(newsletterSubscribers),
+      this.db.query.users.findMany({
+        orderBy: desc(users.createdAt),
+        limit: 5,
+        columns: {
           id: true,
           name: true,
           email: true,
           role: true,
           image: true,
           createdAt: true,
-          _count: {
-            select: {
-              blogs: true,
-              comments: true,
-            },
-          },
         },
       }),
-      this.prisma.blog.findMany({
-        take: 5,
-        orderBy: { createdAt: 'desc' },
-        select: {
+      this.db.query.blogs.findMany({
+        orderBy: desc(blogs.createdAt),
+        limit: 5,
+        with: { author: { columns: { id: true, name: true, image: true } } },
+        columns: {
           id: true,
           title: true,
           slug: true,
           status: true,
           createdAt: true,
-          author: {
-            select: { id: true, name: true, image: true },
-          },
         },
       }),
     ]);
 
     return {
-      totalUsers,
-      totalBlogs,
-      totalNotes,
-      totalComments,
-      pageViews,
-      totalSubscribers,
+      totalUsers: totalUsers.value,
+      totalBlogs: totalBlogs.value,
+      totalNotes: totalNotes.value,
+      totalComments: totalComments.value,
+      pageViews: pageViewCount.value,
+      totalSubscribers: totalSubscribers.value,
       recentUsers,
       recentBlogs,
     };
@@ -72,130 +81,133 @@ export class AdminService {
   async getUsers(query: { page?: number; limit?: number; search?: string }) {
     const page = query.page || 1;
     const limit = query.limit || 20;
-    const skip = (page - 1) * limit;
-    const search = query.search || '';
-
+    const search = query.search?.trim();
     const where = search
-      ? {
-          OR: [
-            { name: { contains: search, mode: 'insensitive' as const } },
-            { email: { contains: search, mode: 'insensitive' as const } },
-          ],
-        }
-      : {};
+      ? or(ilike(users.name, `%${search}%`), ilike(users.email, `%${search}%`))
+      : undefined;
 
-    const [users, total] = await Promise.all([
-      this.prisma.user.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: { createdAt: 'desc' },
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          role: true,
-          image: true,
-          bio: true,
-          createdAt: true,
-          _count: {
-            select: {
-              blogs: true,
-              comments: true,
-            },
-          },
-        },
-      }),
-      this.prisma.user.count({ where }),
+    const [rows, [total]] = await Promise.all([
+      this.db
+        .select({
+          id: users.id,
+          name: users.name,
+          email: users.email,
+          role: users.role,
+          image: users.image,
+          bio: users.bio,
+          createdAt: users.createdAt,
+        })
+        .from(users)
+        .where(where)
+        .orderBy(desc(users.createdAt))
+        .limit(limit)
+        .offset((page - 1) * limit),
+      this.db.select({ value: count() }).from(users).where(where),
     ]);
 
+    const enriched = await Promise.all(
+      rows.map(async (u) => {
+        const [[blogCount], [commentCount]] = await Promise.all([
+          this.db.select({ value: count() }).from(blogs).where(eq(blogs.authorId, u.id)),
+          this.db.select({ value: count() }).from(comments).where(eq(comments.userId, u.id)),
+        ]);
+        return {
+          ...u,
+          totalBlogs: blogCount.value,
+          totalComments: commentCount.value,
+          isSuperAdmin: isSuperAdminEmail(u.email),
+        };
+      }),
+    );
+
     return {
-      users: users.map((u) => ({
-        ...u,
-        totalBlogs: u._count.blogs,
-        totalComments: u._count.comments,
-        _count: undefined,
-      })),
-      total,
+      users: enriched,
+      total: total.value,
       page,
       limit,
-      totalPages: Math.ceil(total / limit),
+      totalPages: Math.ceil(total.value / limit),
     };
   }
 
-  async changeRole(userId: string, role: 'USER' | 'ADMIN') {
+  async changeRole(
+    actor: { id: string; email?: string | null },
+    userId: string,
+    role: 'USER' | 'ADMIN',
+  ) {
     if (!['USER', 'ADMIN'].includes(role)) {
       throw new BadRequestException('Invalid role');
     }
 
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) {
-      throw new NotFoundException('User not found');
+    if (actor.id === userId) {
+      throw new ForbiddenException('You cannot change your own role');
     }
 
-    return this.prisma.user.update({
-      where: { id: userId },
-      data: { role: role as UserRole },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-      },
-    });
+    const [user] = await this.db.select().from(users).where(eq(users.id, userId)).limit(1);
+    if (!user) throw new NotFoundException('User not found');
+
+    if (isSuperAdminEmail(user.email)) {
+      throw new ForbiddenException('Super admin role cannot be changed');
+    }
+
+    const [updated] = await this.db
+      .update(users)
+      .set({ role, updatedAt: new Date() })
+      .where(eq(users.id, userId))
+      .returning({ id: users.id, name: users.name, email: users.email, role: users.role });
+    return updated;
   }
 
   async getAllBlogs() {
-    const blogs = await this.prisma.blog.findMany({
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        title: true,
-        slug: true,
-        category: true,
-        status: true,
-        views: true,
-        createdAt: true,
-        updatedAt: true,
-        author: {
-          select: { id: true, name: true, image: true },
-        },
-        _count: {
-          select: {
-            comments: true,
-            likes: true,
-          },
-        },
-      },
+    const rows = await this.db.query.blogs.findMany({
+      orderBy: desc(blogs.createdAt),
+      with: { author: { columns: { id: true, name: true, image: true } } },
     });
-    return { blogs };
+    const list = await Promise.all(
+      rows.map(async (b) => {
+        const [[commentCount], [likeCount]] = await Promise.all([
+          this.db.select({ value: count() }).from(comments).where(eq(comments.blogId, b.id)),
+          this.db
+            .select({ value: count() })
+            .from(likes)
+            .where(and(eq(likes.blogId, b.id), eq(likes.type, 'LIKE'))),
+        ]);
+        return { ...b, _count: { comments: commentCount.value, likes: likeCount.value } };
+      }),
+    );
+    return { blogs: list };
   }
 
   async deleteBlog(blogId: string) {
-    const blog = await this.prisma.blog.findUnique({ where: { id: blogId } });
-    if (!blog) {
-      throw new NotFoundException('Blog not found');
-    }
-
-    return this.prisma.blog.delete({ where: { id: blogId } });
+    const [blog] = await this.db.select({ id: blogs.id }).from(blogs).where(eq(blogs.id, blogId)).limit(1);
+    if (!blog) throw new NotFoundException('Blog not found');
+    await this.db.delete(blogs).where(eq(blogs.id, blogId));
+    return { message: 'Blog deleted' };
   }
 
   async getAllNotes() {
-    return this.prisma.note.findMany({
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        title: true,
-        subject: true,
-        createdAt: true,
-        updatedAt: true,
-        _count: {
-          select: {
-            comments: true,
-            likes: true,
-          },
-        },
-      },
+    const rows = await this.db.query.notes.findMany({
+      orderBy: desc(notes.createdAt),
+      with: { subject: true },
     });
+    return Promise.all(
+      rows.map(async (n) => {
+        const [[commentCount], [likeCount]] = await Promise.all([
+          this.db.select({ value: count() }).from(comments).where(eq(comments.noteId, n.id)),
+          this.db
+            .select({ value: count() })
+            .from(likes)
+            .where(and(eq(likes.noteId, n.id), eq(likes.type, 'LIKE'))),
+        ]);
+        return {
+          id: n.id,
+          title: n.title,
+          slug: n.slug,
+          subject: n.subject,
+          createdAt: n.createdAt,
+          updatedAt: n.updatedAt,
+          _count: { comments: commentCount.value, likes: likeCount.value },
+        };
+      }),
+    );
   }
 }

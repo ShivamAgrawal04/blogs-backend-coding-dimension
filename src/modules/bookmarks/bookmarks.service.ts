@@ -1,73 +1,152 @@
-import { Injectable } from '@nestjs/common';
-import { PrismaService } from '../../prisma/prisma.service';
+import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import { and, count, desc, eq, SQL } from 'drizzle-orm';
+import { createId } from '@paralleldrive/cuid2';
+import { DrizzleDB } from '@/db/drizzle.module';
+import { DRIZZLE } from '@/db/drizzle.token';
+import {
+  blogs,
+  bookmarks,
+  comments,
+  likes,
+  notes,
+  subjects,
+  users,
+} from '@/db/schema';
 
 @Injectable()
 export class BookmarksService {
-  constructor(private prisma: PrismaService) {}
+  constructor(@Inject(DRIZZLE) private db: DrizzleDB) {}
 
   async toggle(userId: string, dto: { blogId?: string; noteId?: string }) {
-    const where: Record<string, unknown> = { userId };
-
-    if (dto.blogId) where.blogId = dto.blogId;
-    else if (dto.noteId) where.noteId = dto.noteId;
-
-    const existing = await this.prisma.bookmark.findFirst({ where });
+    const target = this.targetCondition(dto.blogId, dto.noteId);
+    const [existing] = await this.db
+      .select({ id: bookmarks.id })
+      .from(bookmarks)
+      .where(and(eq(bookmarks.userId, userId), target))
+      .limit(1);
 
     if (existing) {
-      await this.prisma.bookmark.delete({ where: { id: existing.id } });
+      await this.db.delete(bookmarks).where(eq(bookmarks.id, existing.id));
       return { bookmarked: false };
     }
 
-    await this.prisma.bookmark.create({
-      data: {
-        userId,
-        blogId: dto.blogId,
-        noteId: dto.noteId,
-      },
+    await this.db.insert(bookmarks).values({
+      id: createId(),
+      userId,
+      blogId: dto.blogId ?? null,
+      noteId: dto.noteId ?? null,
     });
 
     return { bookmarked: true };
   }
 
   async getUserBookmarks(userId: string) {
-    return this.prisma.bookmark.findMany({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        blog: {
-          select: {
-            id: true,
-            title: true,
-            slug: true,
-            description: true,
-            category: true,
-            readTime: true,
-            imageGradient: true,
-            author: {
-              select: { id: true, name: true, image: true },
-            },
-            _count: {
-              select: { likes: true, comments: true },
-            },
-          },
-        },
-        note: {
-          select: {
-            id: true,
-            title: true,
-            slug: true,
-            description: true,
-            readTime: true,
-            subject: {
-              select: { id: true, name: true, slug: true, icon: true },
-            },
-            _count: {
-              select: { likes: true, comments: true },
-            },
-          },
-        },
-      },
-    });
+    const items = await this.db
+      .select()
+      .from(bookmarks)
+      .where(eq(bookmarks.userId, userId))
+      .orderBy(desc(bookmarks.createdAt));
+
+    return Promise.all(
+      items.map(async (item) => {
+        let blog = null;
+        let note = null;
+
+        if (item.blogId) {
+          const [row] = await this.db
+            .select({
+              id: blogs.id,
+              title: blogs.title,
+              slug: blogs.slug,
+              description: blogs.description,
+              category: blogs.category,
+              readTime: blogs.readTime,
+              imageGradient: blogs.imageGradient,
+              authorId: users.id,
+              authorName: users.name,
+              authorImage: users.image,
+            })
+            .from(blogs)
+            .innerJoin(users, eq(blogs.authorId, users.id))
+            .where(eq(blogs.id, item.blogId))
+            .limit(1);
+
+          if (row) {
+            const [[likeCount], [commentCount]] = await Promise.all([
+              this.db
+                .select({ value: count() })
+                .from(likes)
+                .where(eq(likes.blogId, item.blogId)),
+              this.db
+                .select({ value: count() })
+                .from(comments)
+                .where(eq(comments.blogId, item.blogId)),
+            ]);
+            blog = {
+              id: row.id,
+              title: row.title,
+              slug: row.slug,
+              description: row.description,
+              category: row.category,
+              readTime: row.readTime,
+              imageGradient: row.imageGradient,
+              author: {
+                id: row.authorId,
+                name: row.authorName,
+                image: row.authorImage,
+              },
+              _count: { likes: likeCount.value, comments: commentCount.value },
+            };
+          }
+        } else if (item.noteId) {
+          const [row] = await this.db
+            .select({
+              id: notes.id,
+              title: notes.title,
+              slug: notes.slug,
+              description: notes.description,
+              readTime: notes.readTime,
+              subjectId: subjects.id,
+              subjectName: subjects.name,
+              subjectSlug: subjects.slug,
+              subjectIcon: subjects.icon,
+            })
+            .from(notes)
+            .innerJoin(subjects, eq(notes.subjectId, subjects.id))
+            .where(eq(notes.id, item.noteId))
+            .limit(1);
+
+          if (row) {
+            const [[likeCount], [commentCount]] = await Promise.all([
+              this.db
+                .select({ value: count() })
+                .from(likes)
+                .where(eq(likes.noteId, item.noteId)),
+              this.db
+                .select({ value: count() })
+                .from(comments)
+                .where(eq(comments.noteId, item.noteId)),
+            ]);
+            note = {
+              id: row.id,
+              title: row.title,
+              slug: row.slug,
+              description: row.description,
+              readTime: row.readTime,
+              subject: {
+                id: row.subjectId,
+                name: row.subjectName,
+                slug: row.subjectSlug,
+                icon: row.subjectIcon,
+              },
+              _count: { likes: likeCount.value, comments: commentCount.value },
+            };
+          }
+        }
+
+        return { ...item, blog, note };
+      }),
+    );
   }
 
   async isBookmarked(
@@ -75,12 +154,19 @@ export class BookmarksService {
     blogId?: string,
     noteId?: string,
   ): Promise<boolean> {
-    const where: Record<string, unknown> = { userId };
-
-    if (blogId) where.blogId = blogId;
-    else if (noteId) where.noteId = noteId;
-
-    const bookmark = await this.prisma.bookmark.findFirst({ where });
+    const [bookmark] = await this.db
+      .select({ id: bookmarks.id })
+      .from(bookmarks)
+      .where(
+        and(eq(bookmarks.userId, userId), this.targetCondition(blogId, noteId)),
+      )
+      .limit(1);
     return !!bookmark;
+  }
+
+  private targetCondition(blogId?: string, noteId?: string): SQL {
+    if (blogId) return eq(bookmarks.blogId, blogId);
+    if (noteId) return eq(bookmarks.noteId, noteId);
+    throw new BadRequestException('blogId or noteId is required');
   }
 }

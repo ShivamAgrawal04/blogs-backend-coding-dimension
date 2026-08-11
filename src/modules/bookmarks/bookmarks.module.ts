@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
-import { BookmarksController } from './bookmarks.controller';
-import { BookmarksService } from './bookmarks.service';
-import { AuthModule } from '../auth/auth.module';
+import { BookmarksController } from '@/modules/bookmarks/bookmarks.controller';
+import { BookmarksService } from '@/modules/bookmarks/bookmarks.service';
+import { AuthModule } from '@/modules/auth/auth.module';
 
 @Module({
   imports: [AuthModule],

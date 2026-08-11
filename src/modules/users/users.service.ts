@@ -1,122 +1,78 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '../../prisma/prisma.service';
-import { resolveAvatar } from '../../common/avatars';
+import {
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { eq } from 'drizzle-orm';
+import { DrizzleDB } from '@/db/drizzle.module';
+import { DRIZZLE } from '@/db/drizzle.token';
+import { users } from '@/db/schema';
+import { resolveAvatar } from '@/common/avatars';
 
 @Injectable()
 export class UsersService {
-  constructor(private prisma: PrismaService) {}
-
-  async getDashboard(userId: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-
-    const [
-      recentBookmarks,
-      recentReads,
-      totalBlogs,
-      totalComments,
-      totalBookmarks,
-      totalReads,
-    ] = await Promise.all([
-      this.prisma.bookmark.findMany({
-        where: { userId },
-        take: 20,
-        orderBy: { createdAt: 'desc' },
-        select: {
-          id: true,
-          createdAt: true,
-          blog: {
-            select: {
-              id: true,
-              title: true,
-              slug: true,
-              description: true,
-              createdAt: true,
-              author: {
-                select: { id: true, name: true, image: true },
-              },
-            },
-          },
-        },
-      }),
-      this.prisma.readHistory.findMany({
-        where: { userId },
-        take: 20,
-        orderBy: { readAt: 'desc' },
-        select: {
-          id: true,
-          readAt: true,
-          blog: {
-            select: {
-              id: true,
-              title: true,
-              slug: true,
-              description: true,
-              createdAt: true,
-              author: {
-                select: { id: true, name: true, image: true },
-              },
-            },
-          },
-        },
-      }),
-      this.prisma.blog.count({ where: { authorId: userId } }),
-      this.prisma.comment.count({ where: { userId } }),
-      this.prisma.bookmark.count({ where: { userId } }),
-      this.prisma.readHistory.count({ where: { userId } }),
-    ]);
-
-    return {
-      recentBookmarks,
-      recentReads,
-      totalBlogs,
-      totalComments,
-      totalBookmarks,
-      totalReads,
-    };
-  }
+  constructor(@Inject(DRIZZLE) private db: DrizzleDB) {}
 
   async getProfile(userId: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        bio: true,
-        image: true,
-        role: true,
-        createdAt: true,
-        _count: {
-          select: {
-            blogs: true,
-            comments: true,
-          },
-        },
-      },
-    });
-
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-
-    return {
-      ...user,
-      totalBlogs: user._count.blogs,
-      totalComments: user._count.comments,
-      _count: undefined,
-    };
+    const [user] = await this.db
+      .select({
+        id: users.id,
+        name: users.name,
+        username: users.username,
+        email: users.email,
+        bio: users.bio,
+        image: users.image,
+        role: users.role,
+        dateOfBirth: users.dateOfBirth,
+        createdAt: users.createdAt,
+      })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    if (!user) throw new NotFoundException('User not found');
+    return { user };
   }
 
   async updateProfile(
     userId: string,
-    dto: { name?: string; bio?: string; image?: string; avatarId?: number },
+    dto: {
+      name?: string;
+      username?: string | null;
+      bio?: string;
+      image?: string;
+      avatarId?: number;
+      dateOfBirth?: string | null;
+    },
   ) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) {
-      throw new NotFoundException('User not found');
+    const [user] = await this.db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    if (!user) throw new NotFoundException('User not found');
+
+    let username: string | null | undefined = undefined;
+    if (dto.username !== undefined) {
+      if (dto.username === null || !String(dto.username).trim()) {
+        username = null;
+      } else {
+        const normalized = String(dto.username).trim().toLowerCase();
+        if (!/^[a-z0-9_]{3,30}$/.test(normalized)) {
+          throw new ConflictException(
+            'Username must be 3–30 characters (letters, numbers, underscore)',
+          );
+        }
+        const [taken] = await this.db
+          .select({ id: users.id })
+          .from(users)
+          .where(eq(users.username, normalized))
+          .limit(1);
+        if (taken && taken.id !== userId) {
+          throw new ConflictException('Username is already taken');
+        }
+        username = normalized;
+      }
     }
 
     let image: string | undefined;
@@ -124,21 +80,40 @@ export class UsersService {
       image = resolveAvatar(dto.avatarId, dto.image);
     }
 
-    return this.prisma.user.update({
-      where: { id: userId },
-      data: {
-        ...(dto.name !== undefined && { name: dto.name }),
+    let dateOfBirth: Date | null | undefined = undefined;
+    if (dto.dateOfBirth !== undefined) {
+      if (dto.dateOfBirth === null || dto.dateOfBirth === '') {
+        dateOfBirth = null;
+      } else {
+        const parsed = new Date(dto.dateOfBirth);
+        if (Number.isNaN(parsed.getTime())) {
+          throw new ConflictException('Invalid date of birth');
+        }
+        dateOfBirth = parsed;
+      }
+    }
+
+    const [updated] = await this.db
+      .update(users)
+      .set({
+        ...(dto.name !== undefined && { name: dto.name.trim() || null }),
+        ...(username !== undefined && { username }),
         ...(dto.bio !== undefined && { bio: dto.bio }),
         ...(image !== undefined && { image }),
-      },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        bio: true,
-        image: true,
-        role: true,
-      },
-    });
+        ...(dateOfBirth !== undefined && { dateOfBirth }),
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId))
+      .returning({
+        id: users.id,
+        name: users.name,
+        username: users.username,
+        email: users.email,
+        bio: users.bio,
+        image: users.image,
+        role: users.role,
+        dateOfBirth: users.dateOfBirth,
+      });
+    return { user: updated };
   }
 }

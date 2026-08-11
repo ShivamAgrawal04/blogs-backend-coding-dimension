@@ -17,7 +17,7 @@ export class ToggleLikeDto {
   @IsString()
   commentId?: string;
 
-  /** LIKE (default) or DISLIKE for future reaction UI */
+  /** LIKE (default) or DISLIKE */
   @ApiPropertyOptional({ enum: ['LIKE', 'DISLIKE'], default: 'LIKE' })
   @IsOptional()
   @IsEnum(['LIKE', 'DISLIKE'] as const)

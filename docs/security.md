@@ -1,17 +1,22 @@
 # Security checklist
 
-- Passwords hashed with bcrypt (cost 12)
-- JWT with expiry; role checks via `JwtAuthGuard` + `RolesGuard`
+- Passwords hashed with bcrypt (cost 12) when used
+- **Access + refresh JWTs in httpOnly cookies** (`SameSite=lax`, `Secure` when `COOKIE_SECURE=true`)
+- Refresh tokens stored **hashed** in DB; rotated on refresh; revoked on logout
+- JWT also accepted via `Authorization: Bearer` for tooling/Swagger
+- OAuth: Google + GitHub; pending avatar id cookie during signup
 - Global ValidationPipe: whitelist + forbid non-whitelisted
-- Helmet + compression enabled
-- Throttler: 100 req/min global; stricter on auth if configured
-- CORS origins from env only
-- Avatar assignment limited to known preset IDs or https URLs
-- Comment text length limited; only author or ADMIN can delete
+- Helmet + compression
+- Throttler on auth routes
+- CORS origins from env **with credentials**
+- Avatar uploads: image MIME only, 2MB limit, stored under `/uploads/avatars`
+- Comment length limited; author or ADMIN can delete
 - Draft blogs never returned from public `GET /blogs`
-- No stack traces leaked in production responses
+- No stack traces in production responses
 
-## Future
+## Cookie layout
 
-- Prefer httpOnly cookies for JWT instead of `localStorage`
-- OAuth providers when needed
+| Cookie | Path | Lifetime (default) |
+|--------|------|--------------------|
+| `access_token` | `/` | ~15m |
+| `refresh_token` | `/api/auth` | ~7d |

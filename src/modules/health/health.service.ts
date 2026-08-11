@@ -1,9 +1,11 @@
-import { Injectable } from '@nestjs/common';
-import { PrismaService } from '../../prisma/prisma.service';
+import { Inject, Injectable } from '@nestjs/common';
+import { sql } from 'drizzle-orm';
+import { DrizzleDB } from '@/db/drizzle.module';
+import { DRIZZLE } from '@/db/drizzle.token';
 
 @Injectable()
 export class HealthService {
-  constructor(private prisma: PrismaService) {}
+  constructor(@Inject(DRIZZLE) private db: DrizzleDB) {}
 
   async check() {
     return {
@@ -21,7 +23,7 @@ export class HealthService {
 
   async ready() {
     try {
-      await this.prisma.$queryRaw`SELECT 1`;
+      await this.db.execute(sql`select 1`);
       return {
         status: 'ready',
         database: 'connected',

@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
-import { LikesController } from './likes.controller';
-import { LikesService } from './likes.service';
-import { AuthModule } from '../auth/auth.module';
+import { LikesController } from '@/modules/likes/likes.controller';
+import { LikesService } from '@/modules/likes/likes.service';
+import { AuthModule } from '@/modules/auth/auth.module';
 
 @Module({
   imports: [AuthModule],

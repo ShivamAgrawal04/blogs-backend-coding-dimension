@@ -8,11 +8,11 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
-import { NewsletterService } from './newsletter.service';
-import { SubscribeDto } from './dto/subscribe.dto';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../auth/guards/roles.guard';
-import { Roles } from '../auth/decorators/roles.decorator';
+import { NewsletterService } from '@/modules/newsletter/newsletter.service';
+import { SubscribeDto } from '@/modules/newsletter/dto/subscribe.dto';
+import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
+import { RolesGuard } from '@/modules/auth/guards/roles.guard';
+import { Roles } from '@/modules/auth/decorators/roles.decorator';
 
 @ApiTags('Newsletter')
 @Controller('newsletter')

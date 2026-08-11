@@ -18,13 +18,13 @@ import {
   ApiBearerAuth,
   ApiQuery,
 } from '@nestjs/swagger';
-import { NoteService } from './notes.service';
-import { CreateNoteDto } from './dto/create-note.dto';
-import { UpdateNoteDto } from './dto/update-note.dto';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../auth/guards/roles.guard';
-import { Roles } from '../auth/decorators/roles.decorator';
-import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { NoteService } from '@/modules/notes/notes.service';
+import { CreateNoteDto } from '@/modules/notes/dto/create-note.dto';
+import { UpdateNoteDto } from '@/modules/notes/dto/update-note.dto';
+import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
+import { RolesGuard } from '@/modules/auth/guards/roles.guard';
+import { Roles } from '@/modules/auth/decorators/roles.decorator';
+import { CurrentUser } from '@/modules/auth/decorators/current-user.decorator';
 
 @ApiTags('Notes')
 @Controller('notes')
@@ -32,7 +32,7 @@ export class NoteController {
   constructor(private readonly noteService: NoteService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Get notes with pagination' })
+  @ApiOperation({ summary: 'List notes (optional ?subject=slug)' })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiQuery({ name: 'subject', required: false, type: String })
@@ -42,6 +42,48 @@ export class NoteController {
     @Query('subject') subject?: string,
   ) {
     return this.noteService.findAll({ page, limit, subject });
+  }
+
+  @Get('subjects/all')
+  @ApiOperation({ summary: 'List subjects with notes (for notes SEO pages)' })
+  findSubjects() {
+    return this.noteService.findSubjects();
+  }
+
+  @Post('subjects')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Create a subject/category (Admin only)' })
+  createSubject(
+    @Body()
+    dto: { name: string; slug?: string; icon?: string; sortOrder?: number },
+  ) {
+    return this.noteService.createSubject(dto);
+  }
+
+  @Put('subjects/:id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update a subject/category (Admin only)' })
+  updateSubject(
+    @Param('id') id: string,
+    @Body()
+    dto: { name?: string; slug?: string; icon?: string; sortOrder?: number },
+  ) {
+    return this.noteService.updateSubject(id, dto);
+  }
+
+  @Delete('subjects/:id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Delete a subject/category (Admin only)' })
+  deleteSubject(@Param('id') id: string) {
+    return this.noteService.deleteSubject(id);
   }
 
   @Get('admin/all')

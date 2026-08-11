@@ -30,4 +30,14 @@ export class CreateNoteDto {
   @IsOptional()
   @IsNumber()
   sortOrder?: number;
+
+  @ApiPropertyOptional({ example: 'Arrays SEO title' })
+  @IsOptional()
+  @IsString()
+  metaTitle?: string;
+
+  @ApiPropertyOptional({ example: 'Learn arrays for interviews' })
+  @IsOptional()
+  @IsString()
+  metaDescription?: string;
 }

@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
-import { NoteController } from './notes.controller';
-import { NoteService } from './notes.service';
-import { AuthModule } from '../auth/auth.module';
+import { NoteController } from '@/modules/notes/notes.controller';
+import { NoteService } from '@/modules/notes/notes.service';
+import { AuthModule } from '@/modules/auth/auth.module';
 
 @Module({
   imports: [AuthModule],

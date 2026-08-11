@@ -1,18 +1,30 @@
-# Database schema (Prisma)
+# Database schema (Drizzle)
 
-Core models: `User`, `Blog`, `Tag`, `BlogTag`, `Subject`, `Note`, `Comment`, `Like`, `Bookmark`, `NewsletterSubscriber`, `PageView`.
+Defined in `src/db/schema.ts`.
+
+Core tables: `users`, `oauth_accounts`, `refresh_tokens`, `blogs`, `tags`, `blog_tags`, `subjects`, `notes`, `comments`, `likes`, `bookmarks`, `newsletter_subscribers`, `page_views`, `read_history`.
 
 ## User
 
 - `role`: `USER` | `ADMIN`
-- `image`: avatar URL (preset or custom)
+- `image`: preset DiceBear URL or `/uploads/avatars/...`
+- Password optional (OAuth users may have null password)
 
-## Blog
+## OAuth / tokens
 
-- SEO: `metaTitle`, `metaDescription` (optional; fall back to title/description)
-- `status`: `DRAFT` | `PUBLISHED` | `ARCHIVED` — public list only shows `PUBLISHED`
+- `oauth_accounts` — Google / GitHub links
+- `refresh_tokens` — hashed refresh tokens + expiry (rotation on refresh)
+
+## Blog / Note
+
+- SEO: `metaTitle`, `metaDescription`
+- Blog `status`: `DRAFT` | `PUBLISHED` | `ARCHIVED`
 
 ## Like (reactions)
 
-- `type`: `LIKE` | `DISLIKE` (dislike reserved for future UI)
-- Unique per user + target (blog / note / comment)
+- `type`: `LIKE` | `DISLIKE`
+- One reaction row per user + target (blog / note / comment)
+
+## Bookmark (wishlist)
+
+- User ↔ blog or note

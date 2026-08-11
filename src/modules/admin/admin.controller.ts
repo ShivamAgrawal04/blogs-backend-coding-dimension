@@ -8,10 +8,11 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
-import { AdminService } from './admin.service';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../auth/guards/roles.guard';
-import { Roles } from '../auth/decorators/roles.decorator';
+import { AdminService } from '@/modules/admin/admin.service';
+import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
+import { RolesGuard } from '@/modules/auth/guards/roles.guard';
+import { Roles } from '@/modules/auth/decorators/roles.decorator';
+import { CurrentUser } from '@/modules/auth/decorators/current-user.decorator';
 
 @ApiTags('Admin')
 @ApiBearerAuth()
@@ -49,8 +50,11 @@ export class AdminController {
       required: ['userId', 'role'],
     },
   })
-  async changeRole(@Body() body: { userId: string; role: 'USER' | 'ADMIN' }) {
-    return this.adminService.changeRole(body.userId, body.role);
+  async changeRole(
+    @CurrentUser() actor: { id: string; email?: string | null },
+    @Body() body: { userId: string; role: 'USER' | 'ADMIN' },
+  ) {
+    return this.adminService.changeRole(actor, body.userId, body.role);
   }
 
   @Get('blogs')

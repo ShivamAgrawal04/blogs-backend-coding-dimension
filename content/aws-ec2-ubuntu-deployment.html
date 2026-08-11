@@ -1,0 +1,270 @@
+<h2>Overview</h2>
+<p>Deploy a <strong>Node.js / Express</strong> backend on an <strong>AWS EC2 Ubuntu</strong> instance using <strong>PM2</strong> and <strong>Nginx</strong> as a reverse proxy. Follow the sections in order the first time; later use the command reference when something breaks.</p>
+
+<h2>1. Connect to EC2</h2>
+<pre><code>ssh -i your-key.pem ubuntu@YOUR_SERVER_IP</code></pre>
+<p>Example:</p>
+<pre><code>ssh -i myserver.pem ubuntu@13.126.xxx.xxx</code></pre>
+<ul>
+<li>Exit server: <code>exit</code></li>
+<li>Switch to root (optional): <code>sudo su</code></li>
+<li>Current user: <code>whoami</code></li>
+<li>Current directory: <code>pwd</code></li>
+</ul>
+
+<h2>2. Update Ubuntu</h2>
+<pre><code>sudo apt update
+sudo apt upgrade -y
+sudo apt autoremove -y
+sudo apt clean</code></pre>
+
+<h2>3. Install Git</h2>
+<pre><code>sudo apt install git -y
+git --version
+
+git config --global user.name "Your Name"
+git config --global user.email "your-email@example.com"
+git config --list
+which git</code></pre>
+
+<h2>4. Install Node.js (LTS)</h2>
+<pre><code>sudo apt install curl -y
+curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
+sudo apt install nodejs -y
+
+node -v
+npm -v
+which node
+which npm</code></pre>
+
+<h2>5. Clone the repository</h2>
+<pre><code># HTTPS
+git clone https://github.com/username/project.git
+
+# SSH
+git clone git@github.com:username/project.git
+
+cd project
+git branch
+git pull origin main</code></pre>
+
+<h2>6. Environment variables</h2>
+<pre><code>nano .env</code></pre>
+<p>Example <code>.env</code>:</p>
+<pre><code>PORT=5000
+DATABASE_URL=
+JWT_SECRET=
+REDIS_URL=
+AWS_ACCESS_KEY=
+AWS_SECRET_KEY=</code></pre>
+<p>In nano: <code>Ctrl+O</code>, Enter, <code>Ctrl+X</code>. Verify with <code>cat .env</code> and <code>ls -la</code>.</p>
+
+<h2>7. Install dependencies</h2>
+<pre><code>npm install
+
+# Clean install if needed
+rm -rf node_modules package-lock.json
+npm install</code></pre>
+
+<h2>8. Build the project</h2>
+<pre><code># TypeScript
+npm run build
+
+# Prisma (if used)
+npx prisma generate
+npx prisma migrate deploy
+npm run seed</code></pre>
+
+<h2>9. Test the app</h2>
+<pre><code>npm run dev      # development
+npm start        # production (often node dist/server.js)</code></pre>
+
+<h2>9.1 Install Redis (optional)</h2>
+<pre><code>sudo apt install redis-server -y</code></pre>
+
+<h2>9.2 Install MongoDB (optional)</h2>
+<h3>Server packages</h3>
+<pre><code>curl -fsSL https://pgp.mongodb.com/server-8.0.asc | \\
+  sudo gpg -o /usr/share/keyrings/mongodb-server-8.0.gpg --dearmor
+
+echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu noble/mongodb-org/8.0 multiverse" | \\
+  sudo tee /etc/apt/sources.list.d/mongodb-org-8.0.list
+
+sudo apt update
+sudo apt install -y mongodb-org
+mongod --version</code></pre>
+<h3>Start and enable</h3>
+<pre><code>sudo systemctl start mongod
+sudo systemctl enable mongod
+sudo systemctl status mongod</code></pre>
+<p>Expected: <code>Active: active (running)</code>.</p>
+<h3>Kernel compatibility override (if needed)</h3>
+<pre><code>sudo systemctl edit mongod</code></pre>
+<p>Add:</p>
+<pre><code>[Service]
+Environment="MONGODB_DISABLE_KERNEL_VERSION_CHECK=true"</code></pre>
+<pre><code>sudo systemctl daemon-reload
+sudo systemctl restart mongod
+sudo systemctl status mongod</code></pre>
+<h3>Logs and shell</h3>
+<pre><code>sudo journalctl -u mongod -n 50 --no-pager
+sudo tail -50 /var/log/mongodb/mongod.log
+
+sudo apt install mongodb-mongosh
+mongosh</code></pre>
+<p>MongoDB Compass is a <strong>GUI</strong> — it needs a desktop display. On a headless EC2 box, use <code>mongosh</code> instead of Compass.</p>
+
+<h2>10. Install and run with PM2</h2>
+<pre><code>sudo npm install -g pm2
+pm2 -v
+
+pm2 start npm --name backend -- start
+# or
+pm2 start dist/server.js --name backend</code></pre>
+
+<h2>11. Essential PM2 commands</h2>
+<pre><code>pm2 list
+pm2 logs
+pm2 logs backend
+pm2 restart backend
+pm2 reload backend
+pm2 stop backend
+pm2 delete backend
+pm2 monit
+pm2 save
+pm2 startup
+# run the command PM2 prints, then:
+pm2 save</code></pre>
+
+<h2>12. Install Nginx</h2>
+<pre><code>sudo apt install nginx -y
+sudo systemctl status nginx
+sudo systemctl start nginx
+sudo systemctl enable nginx
+sudo systemctl restart nginx
+sudo systemctl reload nginx</code></pre>
+
+<h2>13. Nginx reverse proxy</h2>
+<pre><code>sudo nano /etc/nginx/sites-available/backend</code></pre>
+<pre><code>server {
+    listen 80;
+    server_name YOUR_SERVER_IP;
+
+    location / {
+        proxy_pass http://localhost:5000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+    }
+}</code></pre>
+<pre><code>sudo ln -s /etc/nginx/sites-available/backend /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl restart nginx</code></pre>
+
+<h2>14. Firewall (UFW)</h2>
+<pre><code>sudo apt install ufw -y
+sudo ufw allow OpenSSH
+sudo ufw allow 80
+sudo ufw allow 443
+sudo ufw enable
+sudo ufw status</code></pre>
+
+<h2>15. Useful Ubuntu commands</h2>
+<pre><code>pwd
+ls
+ls -la
+cd foldername
+cd ..
+cd ~
+cd /
+mkdir folder
+rm -rf folder
+rm file.txt
+mv old new
+cp file file2</code></pre>
+
+<h2>16. Disk, memory, and CPU</h2>
+<pre><code>df -h
+du -sh *
+free -h
+lscpu</code></pre>
+
+<h2>17. Processes and ports</h2>
+<pre><code>ps aux
+ps aux | grep node
+kill PID
+kill -9 PID
+
+sudo ss -tulpn
+sudo lsof -i :5000
+sudo kill -9 PID</code></pre>
+
+<h2>18. Logs</h2>
+<pre><code>pm2 logs
+sudo tail -f /var/log/nginx/access.log
+sudo tail -f /var/log/nginx/error.log
+journalctl -xe</code></pre>
+
+<h2>19. Git on the server</h2>
+<pre><code>git status
+git pull
+git fetch
+git branch
+git checkout main
+git log --oneline</code></pre>
+
+<h2>20. Node / npm helpers</h2>
+<pre><code>node -v
+npm -v
+npm list -g --depth=0
+npm cache clean --force</code></pre>
+
+<h2>21. Service status</h2>
+<pre><code>systemctl status nginx
+systemctl status ssh
+systemctl status docker
+sudo systemctl restart nginx</code></pre>
+
+<h2>22. Common errors and fixes</h2>
+<h3>Port already in use</h3>
+<pre><code>sudo lsof -i :5000
+sudo kill -9 PID</code></pre>
+<h3>Node not found</h3>
+<pre><code>which node
+node -v
+sudo apt install nodejs -y</code></pre>
+<h3>Git permission denied</h3>
+<pre><code>ssh-keygen -t ed25519 -C "your@email.com"
+cat ~/.ssh/id_ed25519.pub</code></pre>
+<p>Add the public key to GitHub, then clone over SSH again.</p>
+<h3>PM2 not found</h3>
+<pre><code>sudo npm install -g pm2</code></pre>
+<h3>Nginx config test</h3>
+<pre><code>sudo nginx -t</code></pre>
+<h3>Reboot / shutdown</h3>
+<pre><code>sudo reboot
+sudo shutdown now</code></pre>
+
+<h2>Deployment checklist</h2>
+<ul>
+<li>Ubuntu updated</li>
+<li>Git + Node installed</li>
+<li>Repo cloned</li>
+<li><code>.env</code> created</li>
+<li><code>npm install</code> + build done</li>
+<li>PM2 running and saved (<code>pm2 startup</code> + <code>pm2 save</code>)</li>
+<li>Nginx installed and reverse proxy configured</li>
+<li>Firewall allows SSH + 80/443</li>
+<li>Backend reachable</li>
+<li>Domain + SSL (recommended next step)</li>
+</ul>
+
+<h2>Final URLs</h2>
+<ul>
+<li>Without Nginx: <code>http://SERVER_IP:5000</code></li>
+<li>With Nginx: <code>http://SERVER_IP</code></li>
+<li>With SSL: <code>https://yourdomain.com</code></li>
+</ul>
+<p>Once PM2 and Nginx are stable, every deploy is usually: <code>git pull</code> → build → <code>pm2 restart backend</code>.</p>
