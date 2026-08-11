@@ -1,45 +1,38 @@
 import { createHash, randomBytes } from 'crypto';
 import {
+  ConflictException,
   Inject,
   Injectable,
-  ConflictException,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { Response } from 'express';
-import { and, eq, gt, isNull } from 'drizzle-orm';
 import { createId } from '@paralleldrive/cuid2';
 import * as bcrypt from 'bcryptjs';
-import { DrizzleDB } from '@/db/drizzle.module';
-import { DRIZZLE } from '@/db/drizzle.token';
-import {
-  oauthAccounts,
-  refreshTokens,
-  users,
-} from '@/db/schema';
 import { resolveAvatar } from '@/common/avatars';
+import {
+  AUTH_TOKEN_REPOSITORY,
+  USER_REPOSITORY,
+} from '@/database/database.tokens';
+import type { AuthTokenRepository } from '@/database/repositories/interfaces/auth-token.repository';
+import type {
+  PublicUserProfile,
+  UpdateUserProfileInput,
+  UserRepository,
+} from '@/database/repositories/interfaces/user.repository';
 import { RegisterDto } from '@/modules/auth/dto/register.dto';
-
-const userColumns = {
-  id: users.id,
-  name: users.name,
-  username: users.username,
-  email: users.email,
-  role: users.role,
-  bio: users.bio,
-  image: users.image,
-  dateOfBirth: users.dateOfBirth,
-  createdAt: users.createdAt,
-};
 
 @Injectable()
 export class AuthService {
   constructor(
-    @Inject(DRIZZLE) private db: DrizzleDB,
-    private jwtService: JwtService,
-    private config: ConfigService,
+    @Inject(USER_REPOSITORY)
+    private readonly userRepository: UserRepository,
+    @Inject(AUTH_TOKEN_REPOSITORY)
+    private readonly authTokenRepository: AuthTokenRepository,
+    private readonly jwtService: JwtService,
+    private readonly config: ConfigService,
   ) {}
 
   private cookieSecure() {
@@ -86,7 +79,7 @@ export class AuthService {
     const tokenHash = this.hashToken(refreshToken);
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
-    await this.db.insert(refreshTokens).values({
+    await this.authTokenRepository.createRefreshToken({
       id: createId(),
       userId: user.id,
       tokenHash,
@@ -106,11 +99,7 @@ export class AuthService {
 
   /** Email/password register — kept for admin tooling; public users use OAuth */
   async register(dto: RegisterDto, res: Response) {
-    const [existing] = await this.db
-      .select({ id: users.id })
-      .from(users)
-      .where(eq(users.email, dto.email.toLowerCase()))
-      .limit(1);
+    const existing = await this.userRepository.findByEmail(dto.email);
     if (existing) throw new ConflictException('Email already registered');
 
     const hashedPassword = await bcrypt.hash(dto.password, 12);
@@ -119,27 +108,20 @@ export class AuthService {
     }
     const image = resolveAvatar(dto.avatarId, dto.image);
 
-    const [user] = await this.db
-      .insert(users)
-      .values({
-        id: createId(),
-        name: dto.name.trim(),
-        email: dto.email.toLowerCase(),
-        password: hashedPassword,
-        image,
-      })
-      .returning(userColumns);
+    const user = await this.userRepository.create({
+      id: createId(),
+      name: dto.name.trim(),
+      email: dto.email.toLowerCase(),
+      password: hashedPassword,
+      image,
+    });
 
     await this.issueTokens(user, res);
     return { user };
   }
 
   async validateUser(email: string, password: string) {
-    const [user] = await this.db
-      .select()
-      .from(users)
-      .where(eq(users.email, email.toLowerCase()))
-      .limit(1);
+    const user = await this.userRepository.findByEmail(email);
     if (!user?.password) return null;
     const ok = await bcrypt.compare(password, user.password);
     if (!ok) return null;
@@ -174,29 +156,12 @@ export class AuthService {
   async refresh(refreshToken: string | undefined, res: Response) {
     if (!refreshToken) throw new UnauthorizedException('Missing refresh token');
     const tokenHash = this.hashToken(refreshToken);
-    const [stored] = await this.db
-      .select()
-      .from(refreshTokens)
-      .where(
-        and(
-          eq(refreshTokens.tokenHash, tokenHash),
-          isNull(refreshTokens.revokedAt),
-          gt(refreshTokens.expiresAt, new Date()),
-        ),
-      )
-      .limit(1);
+    const stored = await this.authTokenRepository.findValidRefreshTokenByHash(tokenHash);
     if (!stored) throw new UnauthorizedException('Invalid refresh token');
 
-    await this.db
-      .update(refreshTokens)
-      .set({ revokedAt: new Date() })
-      .where(eq(refreshTokens.id, stored.id));
+    await this.authTokenRepository.revokeRefreshTokenById(stored.id);
 
-    const [user] = await this.db
-      .select(userColumns)
-      .from(users)
-      .where(eq(users.id, stored.userId))
-      .limit(1);
+    const user = await this.userRepository.getPublicProfile(stored.userId);
     if (!user) throw new UnauthorizedException();
 
     await this.issueTokens(user, res);
@@ -206,10 +171,7 @@ export class AuthService {
   async logout(refreshToken: string | undefined, res: Response) {
     if (refreshToken) {
       const tokenHash = this.hashToken(refreshToken);
-      await this.db
-        .update(refreshTokens)
-        .set({ revokedAt: new Date() })
-        .where(eq(refreshTokens.tokenHash, tokenHash));
+      await this.authTokenRepository.revokeRefreshTokenByHash(tokenHash);
     }
     this.clearAuthCookies(res);
     return { message: 'Logged out' };
@@ -224,53 +186,48 @@ export class AuthService {
     avatarId?: number;
     accessToken?: string;
     refreshToken?: string;
-  }) {
+  }): Promise<PublicUserProfile> {
     const email = input.email.toLowerCase();
-    const [linked] = await this.db
-      .select()
-      .from(oauthAccounts)
-      .where(
-        and(
-          eq(oauthAccounts.provider, input.provider),
-          eq(oauthAccounts.providerAccountId, input.providerAccountId),
-        ),
-      )
-      .limit(1);
+    const linked = await this.authTokenRepository.findOAuthAccount(
+      input.provider,
+      input.providerAccountId,
+    );
 
     if (linked) {
-      const [user] = await this.db
-        .select(userColumns)
-        .from(users)
-        .where(eq(users.id, linked.userId))
-        .limit(1);
-      return user;
+      const linkedUser = await this.userRepository.getPublicProfile(linked.userId);
+      if (!linkedUser) {
+        throw new UnauthorizedException('Linked user not found');
+      }
+      return linkedUser;
     }
 
-    let [user] = await this.db
-      .select(userColumns)
-      .from(users)
-      .where(eq(users.email, email))
-      .limit(1);
+    const existingUser = await this.userRepository.findByEmail(email);
+    let user: PublicUserProfile;
 
-    if (!user) {
+    if (!existingUser) {
       const image =
         input.avatarId != null
           ? resolveAvatar(input.avatarId, null)
           : input.image || resolveAvatar(undefined, null);
-      [user] = await this.db
-        .insert(users)
-        .values({
-          id: createId(),
-          email,
-          name: input.name || email.split('@')[0],
-          image,
-          emailVerified: new Date(),
-          password: null,
-        })
-        .returning(userColumns);
+      user = await this.userRepository.create({
+        id: createId(),
+        email,
+        name: input.name || email.split('@')[0],
+        image,
+        emailVerified: new Date(),
+        password: null,
+      });
+    } else {
+      const publicProfile = await this.userRepository.getPublicProfile(
+        existingUser.id,
+      );
+      if (!publicProfile) {
+        throw new UnauthorizedException('User not found');
+      }
+      user = publicProfile;
     }
 
-    await this.db.insert(oauthAccounts).values({
+    await this.authTokenRepository.createOAuthAccount({
       id: createId(),
       userId: user.id,
       provider: input.provider,
@@ -283,11 +240,7 @@ export class AuthService {
   }
 
   async getProfile(userId: string) {
-    const [user] = await this.db
-      .select(userColumns)
-      .from(users)
-      .where(eq(users.id, userId))
-      .limit(1);
+    const user = await this.userRepository.getPublicProfile(userId);
     if (!user) throw new NotFoundException('User not found');
     return user;
   }
@@ -303,11 +256,25 @@ export class AuthService {
       dateOfBirth?: string | null;
     },
   ) {
-    // Delegate to same validation rules as UsersService via shared update here
-    const [user] = await this.db.select({ id: users.id }).from(users).where(eq(users.id, userId)).limit(1);
+    const updated = await this.updateUserProfile(userId, dto);
+    return updated;
+  }
+
+  private async updateUserProfile(
+    userId: string,
+    dto: {
+      name?: string;
+      username?: string | null;
+      bio?: string;
+      image?: string;
+      avatarId?: number;
+      dateOfBirth?: string | null;
+    },
+  ): Promise<PublicUserProfile> {
+    const user = await this.userRepository.findById(userId);
     if (!user) throw new NotFoundException('User not found');
 
-    let username: string | null | undefined = undefined;
+    let username: string | null | undefined;
     if (dto.username !== undefined) {
       if (dto.username === null || !String(dto.username).trim()) {
         username = null;
@@ -318,11 +285,7 @@ export class AuthService {
             'Username must be 3–30 characters (letters, numbers, underscore)',
           );
         }
-        const [taken] = await this.db
-          .select({ id: users.id })
-          .from(users)
-          .where(eq(users.username, trimmed))
-          .limit(1);
+        const taken = await this.userRepository.findByUsername(trimmed);
         if (taken && taken.id !== userId) {
           throw new ConflictException('Username is already taken');
         }
@@ -330,12 +293,12 @@ export class AuthService {
       }
     }
 
-    let image: string | undefined;
+    let image: string | null | undefined;
     if (dto.image !== undefined || dto.avatarId !== undefined) {
       image = resolveAvatar(dto.avatarId, dto.image);
     }
 
-    let dateOfBirth: Date | null | undefined = undefined;
+    let dateOfBirth: Date | null | undefined;
     if (dto.dateOfBirth !== undefined) {
       if (dto.dateOfBirth === null || dto.dateOfBirth === '') {
         dateOfBirth = null;
@@ -348,18 +311,15 @@ export class AuthService {
       }
     }
 
-    const [updated] = await this.db
-      .update(users)
-      .set({
-        ...(dto.name !== undefined && { name: dto.name.trim() || null }),
-        ...(username !== undefined && { username }),
-        ...(dto.bio !== undefined && { bio: dto.bio }),
-        ...(image !== undefined && { image }),
-        ...(dateOfBirth !== undefined && { dateOfBirth }),
-        updatedAt: new Date(),
-      })
-      .where(eq(users.id, userId))
-      .returning(userColumns);
+    const input: UpdateUserProfileInput = {
+      ...(dto.name !== undefined && { name: dto.name.trim() || null }),
+      ...(username !== undefined && { username }),
+      ...(dto.bio !== undefined && { bio: dto.bio }),
+      ...(image !== undefined && { image }),
+      ...(dateOfBirth !== undefined && { dateOfBirth }),
+    };
+    const updated = await this.userRepository.updateProfile(userId, input);
+    if (!updated) throw new NotFoundException('User not found');
     return updated;
   }
 }

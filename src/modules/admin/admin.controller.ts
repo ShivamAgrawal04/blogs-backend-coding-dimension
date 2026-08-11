@@ -89,4 +89,25 @@ export class AdminController {
   async getAnalytics() {
     return this.adminService.getStats();
   }
+
+  @Get('settings/database')
+  @ApiOperation({ summary: 'Get active and preferred database provider' })
+  getDatabaseSettings() {
+    return this.adminService.getDatabaseSettings();
+  }
+
+  @Put('settings/database')
+  @ApiOperation({ summary: 'Switch preferred database (postgres | mongodb). Restart required.' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        provider: { type: 'string', enum: ['postgres', 'mongodb'] },
+      },
+      required: ['provider'],
+    },
+  })
+  updateDatabaseProvider(@Body() body: { provider: 'postgres' | 'mongodb' }) {
+    return this.adminService.updateDatabaseProvider(body.provider);
+  }
 }

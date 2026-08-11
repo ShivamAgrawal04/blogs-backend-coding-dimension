@@ -1,11 +1,19 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { sql } from 'drizzle-orm';
-import { DrizzleDB } from '@/db/drizzle.module';
-import { DRIZZLE } from '@/db/drizzle.token';
+import {
+  DB_PROVIDER_TOKEN,
+  HEALTH_REPOSITORY,
+} from '@/database/database.tokens';
+import type { HealthRepository } from '@/database/repositories/interfaces/health.repository';
+import type { DbProvider } from '@/database/types';
 
 @Injectable()
 export class HealthService {
-  constructor(@Inject(DRIZZLE) private db: DrizzleDB) {}
+  constructor(
+    @Inject(HEALTH_REPOSITORY)
+    private readonly healthRepository: HealthRepository,
+    @Inject(DB_PROVIDER_TOKEN)
+    private readonly dbProvider: DbProvider,
+  ) {}
 
   async check() {
     return {
@@ -14,6 +22,7 @@ export class HealthService {
       uptime: process.uptime(),
       environment: process.env.NODE_ENV || 'development',
       version: process.env.npm_package_version || '1.0.0',
+      dbProvider: this.dbProvider,
     };
   }
 
@@ -22,17 +31,18 @@ export class HealthService {
   }
 
   async ready() {
-    try {
-      await this.db.execute(sql`select 1`);
-      return {
-        status: 'ready',
-        database: 'connected',
-      };
-    } catch {
+    const ready = await this.healthRepository.isReady();
+    if (!ready) {
       return {
         status: 'unhealthy',
         database: 'disconnected',
+        dbProvider: this.dbProvider,
       };
     }
+    return {
+      status: 'ready',
+      database: 'connected',
+      dbProvider: this.dbProvider,
+    };
   }
 }

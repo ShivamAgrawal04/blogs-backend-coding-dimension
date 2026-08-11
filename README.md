@@ -2,7 +2,7 @@
 
 Standalone NestJS API. Run everything from **this folder**.
 
-## Quick start
+## Quick start (Postgres — default)
 
 ```bash
 docker compose up -d
@@ -13,20 +13,43 @@ pnpm db:seed
 pnpm dev
 ```
 
+## Database providers (Postgres + MongoDB)
+
+Controllers → Services → Repositories → **Postgres (Drizzle)** or **MongoDB (Mongoose)**.
+
+| Piece | Path |
+|--------|------|
+| Provider switch file | `data/database-settings.json` |
+| Env fallback | `DB_PROVIDER=postgres\|mongodb` |
+| Mongo URI | `MONGODB_URI` |
+| Postgres URL | `DATABASE_URL` |
+| Repositories | `src/database/repositories/{interfaces,postgres,mongodb}` |
+| Mongo schemas | `src/database/mongodb/schemas` |
+
+Switch from **Admin → Settings**, or edit `data/database-settings.json`, then **restart** the API.
+
+```bash
+# Seed Mongo (after MONGODB_URI is set)
+pnpm db:seed:mongo
+```
+
+Postgres and Mongo are **not** auto-synced — seed/migrate each store as needed.
+
 - API: http://localhost:3001  
 - Swagger: http://localhost:3001/api/docs  
 - Seed admin: `admin@codingdimension.com` / `admin123`
 
-## Database (Drizzle)
+## Database scripts
 
 | Script | Purpose |
 |--------|---------|
 | `pnpm db:generate` | Generate SQL migrations |
 | `pnpm db:push` | Push schema to Postgres |
 | `pnpm db:studio` | Drizzle Studio |
-| `pnpm db:seed` | Seed admin + sample content |
+| `pnpm db:seed` | Seed Postgres |
+| `pnpm db:seed:mongo` | Seed MongoDB |
 
-Schema lives in `src/db/schema.ts`.
+Postgres schema: `src/db/schema.ts`. Mongo schemas: `src/database/mongodb/schemas/`.
 
 ## Docs
 

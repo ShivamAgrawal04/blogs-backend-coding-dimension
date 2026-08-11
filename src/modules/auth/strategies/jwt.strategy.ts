@@ -3,10 +3,8 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
 import { Request } from 'express';
-import { eq } from 'drizzle-orm';
-import { DrizzleDB } from '@/db/drizzle.module';
-import { DRIZZLE } from '@/db/drizzle.token';
-import { users } from '@/db/schema';
+import { USER_REPOSITORY } from '@/database/database.tokens';
+import type { UserRepository } from '@/database/repositories/interfaces/user.repository';
 
 interface JwtPayload {
   sub: string;
@@ -25,7 +23,8 @@ function cookieOrBearerExtractor(req: Request): string | null {
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(
     config: ConfigService,
-    @Inject(DRIZZLE) private db: DrizzleDB,
+    @Inject(USER_REPOSITORY)
+    private readonly userRepository: UserRepository,
   ) {
     super({
       jwtFromRequest: cookieOrBearerExtractor,
@@ -35,18 +34,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: JwtPayload) {
-    const [user] = await this.db
-      .select({
-        id: users.id,
-        name: users.name,
-        email: users.email,
-        role: users.role,
-        bio: users.bio,
-        image: users.image,
-      })
-      .from(users)
-      .where(eq(users.id, payload.sub))
-      .limit(1);
+    const user = await this.userRepository.getPublicProfile(payload.sub);
     if (!user) {
       throw new UnauthorizedException();
     }

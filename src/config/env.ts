@@ -1,9 +1,12 @@
 import { z } from "zod";
+import { resolveDbProvider } from "@/database/provider";
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "production"]).default("development"),
   PORT: z.coerce.number().default(3001),
-  DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
+  DB_PROVIDER: z.enum(["postgres", "mongodb"]).default("postgres"),
+  DATABASE_URL: z.string().default(""),
+  MONGODB_URI: z.string().default(""),
   JWT_SECRET: z.string().min(8, "JWT_SECRET must be at least 8 characters"),
   JWT_ACCESS_EXPIRES_IN: z.string().default("15m"),
   JWT_REFRESH_EXPIRES_IN: z.string().default("7d"),
@@ -35,6 +38,16 @@ export function validateEnv(): Env {
   if (!parsed.success) {
     console.error("Invalid environment variables:");
     console.error(parsed.error.flatten().fieldErrors);
+    process.exit(1);
+  }
+
+  const active = resolveDbProvider();
+  if (active === "postgres" && !parsed.data.DATABASE_URL) {
+    console.error("DATABASE_URL is required when DB provider is postgres");
+    process.exit(1);
+  }
+  if (active === "mongodb" && !parsed.data.MONGODB_URI) {
+    console.error("MONGODB_URI is required when DB provider is mongodb");
     process.exit(1);
   }
 

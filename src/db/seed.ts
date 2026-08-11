@@ -388,6 +388,25 @@ docker compose --profile local up -d --force-recreate postgres</code></pre>
         'utf8',
       ),
     },
+    {
+      title:
+        'GCP Compute Engine SSH from Windows: OS Login Step-by-Step',
+      slug: 'gcp-compute-engine-ssh-os-login-windows',
+      description:
+        'Create an SSH key on Windows, install gcloud, add the key with OS Login (project ID not number), enable OS Login on the VM, set IAM roles, and connect.',
+      category: 'DevOps',
+      readTime: '12 min read',
+      featured: true,
+      metaTitle:
+        'GCP SSH + OS Login from Windows | Coding Dimension',
+      metaDescription:
+        'Windows guide for Google Cloud OS Login: ssh-keygen, gcloud CLI, project ID vs number, enable-oslogin metadata, IAM roles, and gcloud compute ssh.',
+      tags: ['gcp', 'ssh', 'os-login', 'windows', 'devops'],
+      content: readFileSync(
+        join(__dirname, '../../content/gcp-ssh-os-login-windows.html'),
+        'utf8',
+      ),
+    },
   ];
 
   for (const blog of blogsSeed) {
@@ -396,7 +415,25 @@ docker compose --profile local up -d --force-recreate postgres</code></pre>
       .from(schema.blogs)
       .where(eq(schema.blogs.slug, blog.slug))
       .limit(1);
-    if (existing.length) continue;
+
+    if (existing.length) {
+      await db
+        .update(schema.blogs)
+        .set({
+          title: blog.title,
+          description: blog.description,
+          content: blog.content,
+          category: blog.category,
+          readTime: blog.readTime,
+          featured: blog.featured,
+          metaTitle: blog.metaTitle,
+          metaDescription: blog.metaDescription,
+          status: 'PUBLISHED',
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.blogs.id, existing[0].id));
+      continue;
+    }
 
     const blogId = createId();
     await db.insert(schema.blogs).values({

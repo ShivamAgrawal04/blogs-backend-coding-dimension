@@ -4,32 +4,22 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
-import { DrizzleDB } from '@/db/drizzle.module';
-import { DRIZZLE } from '@/db/drizzle.token';
-import { users } from '@/db/schema';
 import { resolveAvatar } from '@/common/avatars';
+import { USER_REPOSITORY } from '@/database/database.tokens';
+import type {
+  UpdateUserProfileInput,
+  UserRepository,
+} from '@/database/repositories/interfaces/user.repository';
 
 @Injectable()
 export class UsersService {
-  constructor(@Inject(DRIZZLE) private db: DrizzleDB) {}
+  constructor(
+    @Inject(USER_REPOSITORY)
+    private readonly userRepository: UserRepository,
+  ) {}
 
   async getProfile(userId: string) {
-    const [user] = await this.db
-      .select({
-        id: users.id,
-        name: users.name,
-        username: users.username,
-        email: users.email,
-        bio: users.bio,
-        image: users.image,
-        role: users.role,
-        dateOfBirth: users.dateOfBirth,
-        createdAt: users.createdAt,
-      })
-      .from(users)
-      .where(eq(users.id, userId))
-      .limit(1);
+    const user = await this.userRepository.getPublicProfile(userId);
     if (!user) throw new NotFoundException('User not found');
     return { user };
   }
@@ -45,14 +35,10 @@ export class UsersService {
       dateOfBirth?: string | null;
     },
   ) {
-    const [user] = await this.db
-      .select({ id: users.id })
-      .from(users)
-      .where(eq(users.id, userId))
-      .limit(1);
+    const user = await this.userRepository.findById(userId);
     if (!user) throw new NotFoundException('User not found');
 
-    let username: string | null | undefined = undefined;
+    let username: string | null | undefined;
     if (dto.username !== undefined) {
       if (dto.username === null || !String(dto.username).trim()) {
         username = null;
@@ -63,11 +49,7 @@ export class UsersService {
             'Username must be 3–30 characters (letters, numbers, underscore)',
           );
         }
-        const [taken] = await this.db
-          .select({ id: users.id })
-          .from(users)
-          .where(eq(users.username, normalized))
-          .limit(1);
+        const taken = await this.userRepository.findByUsername(normalized);
         if (taken && taken.id !== userId) {
           throw new ConflictException('Username is already taken');
         }
@@ -75,12 +57,12 @@ export class UsersService {
       }
     }
 
-    let image: string | undefined;
+    let image: string | null | undefined;
     if (dto.image !== undefined || dto.avatarId !== undefined) {
       image = resolveAvatar(dto.avatarId, dto.image);
     }
 
-    let dateOfBirth: Date | null | undefined = undefined;
+    let dateOfBirth: Date | null | undefined;
     if (dto.dateOfBirth !== undefined) {
       if (dto.dateOfBirth === null || dto.dateOfBirth === '') {
         dateOfBirth = null;
@@ -93,27 +75,14 @@ export class UsersService {
       }
     }
 
-    const [updated] = await this.db
-      .update(users)
-      .set({
-        ...(dto.name !== undefined && { name: dto.name.trim() || null }),
-        ...(username !== undefined && { username }),
-        ...(dto.bio !== undefined && { bio: dto.bio }),
-        ...(image !== undefined && { image }),
-        ...(dateOfBirth !== undefined && { dateOfBirth }),
-        updatedAt: new Date(),
-      })
-      .where(eq(users.id, userId))
-      .returning({
-        id: users.id,
-        name: users.name,
-        username: users.username,
-        email: users.email,
-        bio: users.bio,
-        image: users.image,
-        role: users.role,
-        dateOfBirth: users.dateOfBirth,
-      });
+    const updated = await this.userRepository.updateProfile(userId, {
+      ...(dto.name !== undefined && { name: dto.name.trim() || null }),
+      ...(username !== undefined && { username }),
+      ...(dto.bio !== undefined && { bio: dto.bio }),
+      ...(image !== undefined && { image }),
+      ...(dateOfBirth !== undefined && { dateOfBirth }),
+    } as UpdateUserProfileInput);
+    if (!updated) throw new NotFoundException('User not found');
     return { user: updated };
   }
 }

@@ -55,8 +55,10 @@ async function bootstrap() {
   SwaggerModule.setup('api/docs', app, SwaggerModule.createDocument(app, swagger));
 
   await app.listen(env.PORT);
+  const { resolveDbProvider } = await import('@/database/provider');
   logger.log(`Application running on: http://localhost:${env.PORT}`);
   logger.log(`API docs: http://localhost:${env.PORT}/api/docs`);
+  logger.log(`Active DB provider: ${resolveDbProvider()}`);
 }
 
 bootstrap();

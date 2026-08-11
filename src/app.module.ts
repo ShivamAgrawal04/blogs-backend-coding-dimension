@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
-import { DrizzleModule } from '@/db/drizzle.module';
+import { DatabaseModule } from '@/database/database.module';
 import { AuthModule } from '@/modules/auth/auth.module';
 import { BlogsModule } from '@/modules/blogs/blogs.module';
 import { NotesModule } from '@/modules/notes/notes.module';
@@ -20,7 +20,7 @@ import { HealthModule } from '@/modules/health/health.module';
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 100 }]),
-    DrizzleModule,
+    DatabaseModule,
     AuthModule,
     BlogsModule,
     NotesModule,
