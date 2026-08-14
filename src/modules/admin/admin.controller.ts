@@ -6,9 +6,12 @@ import {
   Body,
   Query,
   UseGuards,
+  Res,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
+import type { Response } from 'express';
 import { AdminService } from '@/modules/admin/admin.service';
+import { AuthService } from '@/modules/auth/auth.service';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/modules/auth/guards/roles.guard';
 import { Roles } from '@/modules/auth/decorators/roles.decorator';
@@ -20,7 +23,10 @@ import { CurrentUser } from '@/modules/auth/decorators/current-user.decorator';
 @Roles('ADMIN')
 @Controller('admin')
 export class AdminController {
-  constructor(private readonly adminService: AdminService) {}
+  constructor(
+    private readonly adminService: AdminService,
+    private readonly authService: AuthService,
+  ) {}
 
   @Get('stats')
   @ApiOperation({ summary: 'Get admin dashboard statistics' })
@@ -97,7 +103,10 @@ export class AdminController {
   }
 
   @Put('settings/database')
-  @ApiOperation({ summary: 'Switch preferred database (postgres | mongodb). Restart required.' })
+  @ApiOperation({
+    summary:
+      'Hot-switch active database (postgres | mongodb). Clears auth cookies — re-login required.',
+  })
   @ApiBody({
     schema: {
       type: 'object',
@@ -107,7 +116,17 @@ export class AdminController {
       required: ['provider'],
     },
   })
-  updateDatabaseProvider(@Body() body: { provider: 'postgres' | 'mongodb' }) {
-    return this.adminService.updateDatabaseProvider(body.provider);
+  updateDatabaseProvider(
+    @Body() body: { provider: 'postgres' | 'mongodb' },
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = this.adminService.updateDatabaseProvider(body.provider);
+    // Sessions are per-database (user ids + refresh tokens). Force re-login.
+    this.authService.clearAuthCookies(res);
+    return {
+      ...result,
+      requiresReauth: true,
+      message: `Now using ${result.active}. Please sign in again — sessions do not carry across databases.`,
+    };
   }
 }

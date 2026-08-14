@@ -1,12 +1,16 @@
 import 'dotenv/config';
-import { readFileSync } from 'fs';
-import { join } from 'path';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { and, eq } from 'drizzle-orm';
 import { Pool } from 'pg';
 import { createId } from '@paralleldrive/cuid2';
 import * as bcrypt from 'bcryptjs';
 import * as schema from '@/db/schema';
+import {
+  awsEc2UbuntuDeployment,
+  deployNextjsCloudflare,
+  gcpSshOsLoginWindows,
+  pushOneRepoTwoGithubAccounts,
+} from '@/db/seed-blog-bodies';
 
 async function main() {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
@@ -365,10 +369,7 @@ docker compose --profile local up -d --force-recreate postgres</code></pre>
       metaDescription:
         'Step-by-step AWS EC2 Ubuntu guide for Node.js backends: Git, Node LTS, PM2, Nginx reverse proxy, UFW, MongoDB/Redis extras, and common fixes.',
       tags: ['aws', 'ec2', 'nodejs', 'nginx', 'pm2', 'devops'],
-      content: readFileSync(
-        join(__dirname, '../../content/aws-ec2-ubuntu-deployment.html'),
-        'utf8',
-      ),
+      content: awsEc2UbuntuDeployment,
     },
     {
       title: 'How to Deploy a Next.js Project on Cloudflare',
@@ -383,10 +384,7 @@ docker compose --profile local up -d --force-recreate postgres</code></pre>
       metaDescription:
         'Practical guide to Next.js on Cloudflare Workers: OpenNext, wrangler.jsonc, middleware.ts (not proxy.ts), NEXT_PUBLIC build vars, Git deploy, and legacy-peer-deps.',
       tags: ['cloudflare', 'nextjs', 'opennext', 'workers', 'devops'],
-      content: readFileSync(
-        join(__dirname, '../../content/deploy-nextjs-cloudflare.html'),
-        'utf8',
-      ),
+      content: deployNextjsCloudflare,
     },
     {
       title:
@@ -402,10 +400,23 @@ docker compose --profile local up -d --force-recreate postgres</code></pre>
       metaDescription:
         'Windows guide for Google Cloud OS Login: ssh-keygen, gcloud CLI, project ID vs number, enable-oslogin metadata, IAM roles, and gcloud compute ssh.',
       tags: ['gcp', 'ssh', 'os-login', 'windows', 'devops'],
-      content: readFileSync(
-        join(__dirname, '../../content/gcp-ssh-os-login-windows.html'),
-        'utf8',
-      ),
+      content: gcpSshOsLoginWindows,
+    },
+    {
+      title:
+        'Push One Local Repo to Two GitHub Accounts (Remotes + SSH)',
+      slug: 'push-one-repo-to-two-github-accounts',
+      description:
+        'Keep one local Git folder and update two GitHub accounts with a second remote. Covers empty Repo B setup, Windows SSH Host aliases, username typos, and Repository not found.',
+      category: 'DevOps',
+      readTime: '10 min read',
+      featured: true,
+      metaTitle:
+        'One Repo, Two GitHub Accounts | Coding Dimension',
+      metaDescription:
+        'Step-by-step: add a second Git remote, configure Windows SSH aliases for multiple GitHub accounts, and fix hostname / Repository not found errors.',
+      tags: ['git', 'github', 'ssh', 'windows', 'devops'],
+      content: pushOneRepoTwoGithubAccounts,
     },
   ];
 

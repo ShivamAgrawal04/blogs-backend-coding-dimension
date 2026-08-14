@@ -15,12 +15,14 @@ import { AnalyticsModule } from '@/modules/analytics/analytics.module';
 import { AdminModule } from '@/modules/admin/admin.module';
 import { UsersModule } from '@/modules/users/users.module';
 import { HealthModule } from '@/modules/health/health.module';
+import { StorageModule } from '@/storage/storage.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 100 }]),
     DatabaseModule,
+    StorageModule,
     AuthModule,
     BlogsModule,
     NotesModule,

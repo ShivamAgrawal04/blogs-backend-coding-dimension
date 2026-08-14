@@ -21,6 +21,14 @@ const envSchema = z.object({
   GITHUB_CLIENT_SECRET: z.string().optional().default(""),
   OAUTH_CALLBACK_URL: z.string().default("http://localhost:3001/api/auth"),
   FRONTEND_URL: z.string().default("http://localhost:3000"),
+  PCLOUD_CLIENT_ID: z.string().optional().default(""),
+  PCLOUD_CLIENT_SECRET: z.string().optional().default(""),
+  PCLOUD_ACCESS_TOKEN: z.string().optional().default(""),
+  PCLOUD_API_HOST: z.string().optional().default("api.pcloud.com"),
+  PCLOUD_REDIRECT_URI: z
+    .string()
+    .optional()
+    .default("http://localhost:3001/api/uploads/pcloud/callback"),
   LOG_LEVEL: z
     .enum(["fatal", "error", "warn", "info", "debug", "trace"])
     .default("info"),
@@ -41,14 +49,24 @@ export function validateEnv(): Env {
     process.exit(1);
   }
 
-  const active = resolveDbProvider();
-  if (active === "postgres" && !parsed.data.DATABASE_URL) {
-    console.error("DATABASE_URL is required when DB provider is postgres");
+  const hasPostgres = Boolean(parsed.data.DATABASE_URL.trim());
+  const hasMongo = Boolean(parsed.data.MONGODB_URI.trim());
+  if (!hasPostgres && !hasMongo) {
+    console.error("Set at least one of DATABASE_URL or MONGODB_URI");
     process.exit(1);
   }
-  if (active === "mongodb" && !parsed.data.MONGODB_URI) {
-    console.error("MONGODB_URI is required when DB provider is mongodb");
-    process.exit(1);
+
+  // Prefer settings file / DB_PROVIDER, but fall back if that URI is missing
+  const preferred = resolveDbProvider();
+  if (preferred === "postgres" && !hasPostgres && hasMongo) {
+    console.warn(
+      `Preferred provider is postgres but DATABASE_URL is empty — starting with mongodb available for admin switch.`,
+    );
+  }
+  if (preferred === "mongodb" && !hasMongo && hasPostgres) {
+    console.warn(
+      `Preferred provider is mongodb but MONGODB_URI is empty — starting with postgres available for admin switch.`,
+    );
   }
 
   validatedEnv = parsed.data;

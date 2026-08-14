@@ -9,9 +9,11 @@ import { LocalStrategy } from '@/modules/auth/strategies/local.strategy';
 import { GoogleStrategy } from '@/modules/auth/strategies/google.strategy';
 import { GithubStrategy } from '@/modules/auth/strategies/github.strategy';
 import { PendingAvatarMiddleware } from '@/modules/auth/middleware/pending-avatar.middleware';
+import { StorageModule } from '@/storage/storage.module';
 
 @Module({
   imports: [
+    StorageModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       inject: [ConfigService],

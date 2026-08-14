@@ -34,7 +34,17 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: JwtPayload) {
-    const user = await this.userRepository.getPublicProfile(payload.sub);
+    let user = await this.userRepository.getPublicProfile(payload.sub);
+
+    // After a DB switch, JWT `sub` may be an id from the other database.
+    // Fall back to email so a still-valid cookie can resolve on the active DB.
+    if (!user && payload.email) {
+      const byEmail = await this.userRepository.findByEmail(payload.email);
+      if (byEmail) {
+        user = await this.userRepository.getPublicProfile(byEmail.id);
+      }
+    }
+
     if (!user) {
       throw new UnauthorizedException();
     }

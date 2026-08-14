@@ -8,7 +8,6 @@ import {
 import { isSuperAdminEmail } from '@/common/roles';
 import {
   ADMIN_REPOSITORY,
-  DB_PROVIDER_TOKEN,
   USER_REPOSITORY,
 } from '@/database/database.tokens';
 import type { AdminRepository } from '@/database/repositories/interfaces/admin.repository';
@@ -23,8 +22,6 @@ export class AdminService {
     private readonly adminRepository: AdminRepository,
     @Inject(USER_REPOSITORY)
     private readonly userRepository: UserRepository,
-    @Inject(DB_PROVIDER_TOKEN)
-    private readonly activeProvider: DbProvider,
     private readonly settingsService: SettingsService,
   ) {}
 
@@ -76,29 +73,24 @@ export class AdminService {
   }
 
   getDatabaseSettings() {
-    const preferred = this.settingsService.getProvider();
+    const active = this.settingsService.getProvider();
+    const available = this.settingsService.getAvailableProviders();
     return {
-      active: this.activeProvider,
-      preferred,
-      requiresRestart: preferred !== this.activeProvider,
+      active,
+      available,
       options: ['postgres', 'mongodb'] as DbProvider[],
-      note: 'Changing the database provider writes data/database-settings.json. Restart the API for it to take effect.',
+      requiresRestart: false,
+      note: 'Switch applies instantly. Keep both DATABASE_URL and MONGODB_URI in .env — no restart, no .env edit when toggling.',
     };
   }
 
   updateDatabaseProvider(provider: DbProvider) {
-    if (provider !== 'postgres' && provider !== 'mongodb') {
-      throw new BadRequestException('provider must be postgres or mongodb');
-    }
-    this.settingsService.setProvider(provider);
+    const active = this.settingsService.setProvider(provider);
     return {
-      active: this.activeProvider,
-      preferred: provider,
-      requiresRestart: provider !== this.activeProvider,
-      message:
-        provider === this.activeProvider
-          ? `Already using ${provider}.`
-          : `Preferred database set to ${provider}. Restart the backend to apply.`,
+      active,
+      available: this.settingsService.getAvailableProviders(),
+      requiresRestart: false,
+      message: `Now using ${active}. Switch is live — no restart needed.`,
     };
   }
 }

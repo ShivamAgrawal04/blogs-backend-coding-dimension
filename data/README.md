@@ -1,12 +1,16 @@
 # Data settings
 
-`database-settings.json` stores the **preferred** database provider (`postgres` or `mongodb`).
+`database-settings.json` stores the **active** database provider (`postgres` or `mongodb`).
 
-Priority on API boot:
-1. This file
-2. `DB_PROVIDER` env
-3. Default `postgres`
+## Hot switch (Admin → Settings)
 
-Admin UI: **Admin → Settings**. Changing the provider updates this file; **restart the backend** to apply.
+1. Keep **both** URIs in `.env`:
+   - `DATABASE_URL=...`
+   - `MONGODB_URI=...`
+2. Start the API once — both connections stay open.
+3. Toggle in **Admin → Settings** — traffic switches **immediately**.
+4. No restart. No `.env` edit when switching.
 
-Both databases are supported through the MVC repository layer under `src/database/`. Content is **not** auto-synced between Postgres and Mongo — seed each store separately.
+`DB_PROVIDER` / this JSON file only pick the starting provider on boot.
+
+Postgres and Mongo are **not** auto-synced — seed each store separately (`pnpm db:seed` / `pnpm db:seed:mongo`).

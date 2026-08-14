@@ -23,12 +23,11 @@ import {
   ApiBody,
   ApiConsumes,
 } from '@nestjs/swagger';
-import { Throttle } from '@nestjs/throttler';
+import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { Response, Request } from 'express';
-import { diskStorage } from 'multer';
-import { extname, join } from 'path';
-import { createId } from '@paralleldrive/cuid2';
 import { AuthService } from '@/modules/auth/auth.service';
+import { StorageService } from '@/storage/storage.service';
+import { avatarMulterOptions } from '@/storage/multer.options';
 import { RegisterDto } from '@/modules/auth/dto/register.dto';
 import { LocalAuthGuard } from '@/modules/auth/guards/local-auth.guard';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
@@ -41,6 +40,7 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly config: ConfigService,
+    private readonly storage: StorageService,
   ) {}
 
   @Post('register')
@@ -75,6 +75,7 @@ export class AuthController {
   }
 
   @Post('refresh')
+  @SkipThrottle()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Rotate refresh token and issue new access cookie' })
   async refresh(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
@@ -82,6 +83,7 @@ export class AuthController {
   }
 
   @Post('logout')
+  @SkipThrottle()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Revoke refresh token and clear cookies' })
   async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
@@ -168,30 +170,21 @@ export class AuthController {
       properties: { avatar: { type: 'string', format: 'binary' } },
     },
   })
-  @UseInterceptors(
-    FileInterceptor('avatar', {
-      storage: diskStorage({
-        destination: join(process.cwd(), 'uploads', 'avatars'),
-        filename: (_req, file, cb) => {
-          cb(null, `${createId()}${extname(file.originalname) || '.jpg'}`);
-        },
-      }),
-      limits: { fileSize: 2 * 1024 * 1024 },
-      fileFilter: (_req, file, cb) => {
-        if (!file.mimetype.startsWith('image/')) {
-          return cb(new BadRequestException('Only images allowed') as any, false);
-        }
-        cb(null, true);
-      },
-    }),
-  )
-  @ApiOperation({ summary: 'Upload cropped avatar image' })
+  @UseInterceptors(FileInterceptor('avatar', avatarMulterOptions))
+  @ApiOperation({ summary: 'Upload cropped avatar image to pCloud' })
   async uploadAvatar(
     @CurrentUser('id') userId: string,
     @UploadedFile() file: Express.Multer.File,
   ) {
     if (!file) throw new BadRequestException('File required');
-    const image = `/uploads/avatars/${file.filename}`;
-    return this.authService.updateProfile(userId, { image });
+    const uploaded = await this.storage.upload(file, 'avatars');
+    const previous = await this.authService.getProfile(userId);
+    const updated = await this.authService.updateProfile(userId, {
+      image: uploaded.url,
+    });
+    if (previous?.image && previous.image !== uploaded.url) {
+      await this.storage.deleteByUrl(previous.image);
+    }
+    return updated;
   }
 }

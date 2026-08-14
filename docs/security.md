@@ -9,7 +9,9 @@
 - Helmet + compression
 - Throttler on auth routes
 - CORS origins from env **with credentials**
-- Avatar uploads: image MIME only, 2MB limit, stored under `/uploads/avatars`
+- Avatar uploads: image MIME only, 2MB limit, stored in pCloud (`coding-dimension/avatars`)
+- Admin file uploads: images/PDF/zip/text, 15MB, stored in pCloud (`files/`, `blogs/`, `notes/`)
+- pCloud OAuth code flow (`oauth2_token`); access token saved in `data/pcloud-settings.json`
 - Comment length limited; author or ADMIN can delete
 - Draft blogs never returned from public `GET /blogs`
 - No stack traces in production responses

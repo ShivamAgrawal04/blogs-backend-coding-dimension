@@ -121,7 +121,7 @@ export class AuthService {
   }
 
   async validateUser(email: string, password: string) {
-    const user = await this.userRepository.findByEmail(email);
+    const user = await this.userRepository.findByEmail(email.trim().toLowerCase());
     if (!user?.password) return null;
     const ok = await bcrypt.compare(password, user.password);
     if (!ok) return null;

@@ -7,3 +7,4 @@ coverage
 *.js.map
 tsconfig.tsbuildinfo
 .prisma
+data/pcloud-settings.json
